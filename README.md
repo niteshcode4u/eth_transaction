@@ -1,2 +1,2 @@
-# eth_transaction
-Keep track of eth transaction
+# EthTransaction
+An application to interact with polygon and provide status about transaction to user via slack.
