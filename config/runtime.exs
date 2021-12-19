@@ -13,11 +13,7 @@ if config_env() == :prod do
   # to check this value into version control, so we use an environment
   # variable instead.
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+    System.get_env("SECRET_KEY_BASE", "GEM0hhjsTgEg4WXNADfgrSN9KPBC2yMc86MfXk7neXGKHEpKF90D6XBREercckQd")
 
   config :eth_transaction, EthTransactionWeb.Endpoint,
     http: [
@@ -28,6 +24,7 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: String.to_integer(System.get_env("PORT") || "4000")
     ],
+    server: true,
     secret_key_base: secret_key_base
 
   # ## Using releases
