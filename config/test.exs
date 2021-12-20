@@ -7,6 +7,9 @@ config :eth_transaction, EthTransactionWeb.Endpoint,
   secret_key_base: "47uJAkpxJ0b8enHZ0UGGiAltyRJOH7LI/pc9yFQGyuJdZtRG64ypHK95VqHvsaJr",
   server: false
 
+config :eth_transaction,
+  alert_pending_timer: :timer.seconds(5)
+
 # Print only warnings and errors during test
 config :logger, level: :warn
 

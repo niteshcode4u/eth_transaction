@@ -9,6 +9,7 @@ defmodule EthTransaction do
 
   @success_statuses ~w(confirmed registered)
   @delayed_alert_statuses ~w(pending initiated)
+  @alert_pending_timer Application.get_env(:eth_transaction, :alert_pending_timer)
   alias EthTransaction.Cache
   alias EthTransaction.Behaviors.SlackClient
   alias EthTransaction.Behaviors.BlocknativeClient
@@ -39,8 +40,14 @@ defmodule EthTransaction do
   end
 
   def cache_and_alert("pending", tx_hash) do
-    Cache.update_transaction("pending", tx_hash, false)
-    send_delayed_pending_alert(tx_hash)
+    %{alert_sent?: alert_sent?} = Cache.fetch_transaction(tx_hash)
+
+    if alert_sent? do
+      :do_nothing
+    else
+      Cache.update_transaction("pending", tx_hash, false)
+      send_delayed_pending_alert(tx_hash)
+    end
   end
 
   # NOTE:  When we don't know the status form BlockNative we are considering it as unknown.
@@ -48,7 +55,7 @@ defmodule EthTransaction do
     do: SlackClient.webhook_post(tx_hash, "Unexpected status: #{status} from BlocknativeAPI.")
 
   defp send_delayed_pending_alert(tx_hash) do
-    Process.send_after(Cache, {:send_delayed_pending_alert, tx_hash}, 2 * 60 * 1000)
+    Process.send_after(Cache, {:send_delayed_pending_alert, tx_hash}, @alert_pending_timer)
   end
 
   def alert_delayed_pending_status(%{status: status, tx_hash: tx_hash, alert_sent?: false} = tx)
@@ -57,6 +64,4 @@ defmodule EthTransaction do
 
     %{tx | alert_sent?: true, status: "pending"}
   end
-
-  def alert_delayed_pending_status(tx), do: tx
 end

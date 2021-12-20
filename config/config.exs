@@ -14,6 +14,7 @@ config :eth_transaction,
     network: "main",
     mempool_webhook_url: "https://api.blocknative.com/transaction"
   },
+  alert_pending_timer: :timer.minutes(2),
   username: "niteshcode4you",
   slack_webhook_url:
     "https://hooks.slack.com/services/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"

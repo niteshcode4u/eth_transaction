@@ -9,6 +9,10 @@ defmodule EthTransactionWeb.TransactionController do
     |> json(%{"status" => "success"})
   end
 
+  def create(conn, _params) do
+    send_resp(conn, 400, "")
+  end
+
   def fetch_all(conn, params) do
     render(
       conn,

@@ -5,9 +5,10 @@ defmodule EthTransactionWeb.TransactionControllerTest do
   alias EthTransaction.Cache
   alias EthTransaction.MockBlockNative
   alias EthTransaction.MockSlack
+  @alert_pending_timer Application.get_env(:eth_transaction, :alert_pending_timer)
 
   import Mox
-  setup [:clear_on_exit, :verify_on_exit!]
+  setup [:set_mox_global, :clear_on_exit, :verify_on_exit!]
 
   describe "GET /api/transactions" do
     test "Return empty list of txs when no tx available", %{conn: conn} do
@@ -48,12 +49,28 @@ defmodule EthTransactionWeb.TransactionControllerTest do
   end
 
   describe "POST /api/transactions" do
+    test "Return error in case malformed request", %{conn: conn} do
+      resp = post(conn, "/api/transactions", %{})
+
+      assert resp.status == 400
+    end
+
     test "Return success status once created", %{conn: conn} do
       stub(MockBlockNative, :watch_tx, fn _ -> {:ok, :response} end)
+      stub(MockSlack, :webhook_post, fn _, _ -> {:ok, :response} end)
 
-      resp = post(conn, "/api/transactions", %{"txs_hash" => generate_dummy_tx_hash()})
+      tx_hash = generate_dummy_tx_hash()
+
+      resp = post(conn, "/api/transactions", %{"txs_hash" => tx_hash})
 
       assert json_response(resp, 200) == %{"status" => "success"}
+      Process.sleep(@alert_pending_timer)
+
+      assert Cache.fetch_transaction(tx_hash) == %{
+               tx_hash: tx_hash,
+               status: "pending",
+               alert_sent?: true
+             }
     end
   end
 
@@ -64,13 +81,13 @@ defmodule EthTransactionWeb.TransactionControllerTest do
       assert resp.status == 400
     end
 
-    test "Return success status if correct request received from blocknative", %{conn: conn} do
-      stub(MockBlockNative, :watch_tx, fn _ -> {:ok, :response} end)
+    test "Return success for status confirmed or registered if correct request received from blocknative",
+         %{conn: conn} do
       stub(MockSlack, :webhook_post, fn _, _ -> {:ok, :response} end)
 
       # setup
       tx_hash = generate_dummy_tx_hash()
-      EthTransaction.Cache.update_transaction("pending", tx_hash, false)
+      Cache.update_transaction("pending", tx_hash, false)
 
       resp =
         post(conn, "/api/transactions/webhook-stats", %{
@@ -79,6 +96,99 @@ defmodule EthTransactionWeb.TransactionControllerTest do
         })
 
       assert resp.status == 200
+
+      assert Cache.fetch_transaction(tx_hash) == %{
+               tx_hash: tx_hash,
+               status: "confirmed",
+               alert_sent?: true
+             }
+
+      # setup
+      tx_hash2 = generate_dummy_tx_hash()
+
+      resp2 =
+        post(conn, "/api/transactions/webhook-stats", %{
+          "status" => "registered",
+          "hash" => tx_hash2
+        })
+
+      assert resp2.status == 200
+
+      assert Cache.fetch_transaction(tx_hash2) == %{
+               tx_hash: tx_hash2,
+               status: "registered",
+               alert_sent?: true
+             }
+    end
+
+    test "Return success for status pending if correct request received from blocknative", %{
+      conn: conn
+    } do
+      stub(MockSlack, :webhook_post, fn _, _ -> {:ok, :response} end)
+
+      # setup
+      tx_hash = generate_dummy_tx_hash()
+      Cache.update_transaction("initiated", tx_hash, false)
+
+      resp =
+        post(conn, "/api/transactions/webhook-stats", %{
+          "status" => "pending",
+          "hash" => tx_hash
+        })
+
+      assert resp.status == 200
+      Process.sleep(@alert_pending_timer)
+
+      assert Cache.fetch_transaction(tx_hash) == %{
+               tx_hash: tx_hash,
+               status: "pending",
+               alert_sent?: true
+             }
+    end
+
+    test "Remain same transaction state in case of pending status from blocknative & alert already sent",
+         %{conn: conn} do
+      # setup
+      tx_hash = generate_dummy_tx_hash()
+      Cache.update_transaction("pending", tx_hash, true)
+      Cache.fetch_transactions()
+
+      resp =
+        post(conn, "/api/transactions/webhook-stats", %{
+          "status" => "pending",
+          "hash" => tx_hash
+        })
+
+      assert resp.status == 200
+
+      assert Cache.fetch_transaction(tx_hash) == %{
+               tx_hash: tx_hash,
+               status: "pending",
+               alert_sent?: true
+             }
+    end
+
+    test "Return success for status invalid_status if invalid request received from blocknative",
+         %{conn: conn} do
+      stub(MockSlack, :webhook_post, fn _, _ -> {:ok, :response} end)
+
+      # setup
+      tx_hash = generate_dummy_tx_hash()
+      Cache.update_transaction("initiated", tx_hash, false)
+
+      resp =
+        post(conn, "/api/transactions/webhook-stats", %{
+          "status" => "invalid_status",
+          "hash" => tx_hash
+        })
+
+      assert resp.status == 200
+
+      assert Cache.fetch_transaction(tx_hash) == %{
+               tx_hash: tx_hash,
+               status: "initiated",
+               alert_sent?: false
+             }
     end
   end
 
